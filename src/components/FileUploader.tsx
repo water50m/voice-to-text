@@ -19,7 +19,7 @@ export default function FileUploader({ file, chunkCount, onFileSelect }: FileUpl
         <span className="text-sm text-gray-400">รองรับไฟล์ใหญ่ (ระบบจะตัดแบ่งอัตโนมัติ)</span>
         <input 
           type="file" 
-          accept="audio/*" 
+          accept="audio/*,video/*"
           onChange={onFileSelect} 
           className="hidden" 
         />

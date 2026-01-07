@@ -33,6 +33,10 @@ export default function ChunkTable({ chunks, onTranscribe, onUpdateText }: Chunk
                 {/* 1. Part ID & Size */}
                 <td className="p-4 align-top">
                   <div className="font-bold text-gray-700">Part {index + 1}</div>
+                  <div className="text-xs font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded mt-1 inline-block">
+                    {chunk.timeDisplay}
+                  </div>
+
                   <div className="text-xs text-gray-400 mt-1">{sizeMB} MB</div>
                 </td>
 

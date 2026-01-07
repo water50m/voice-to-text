@@ -6,4 +6,6 @@ export interface AudioChunk {
   url: string;
   text: string;
   status: ChunkStatus;
+  fileName:string;
+  timeDisplay:string;
 }

@@ -1,6 +1,6 @@
 
 'use client';
-import { CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle, Loader2, AlertCircle, Download } from 'lucide-react';
 import { AudioChunk } from '@/types/audio';
 
 interface ChunkItemProps {
@@ -22,9 +22,22 @@ export default function ChunkItem({ chunk, index, onTranscribe, onUpdateText }: 
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-semibold text-gray-700 flex items-center gap-2">
           <span>Part {index + 1}</span>
+
+          <div className="text-xs font-mono text-blue-600 bg-blue-50 px-1 py-0.5 rounded mt-1 inline-block">
+               {chunk.timeDisplay}
+            </div>
           <span className="text-sm font-normal text-gray-500">
             ({sizeMB} MB)
           </span>
+          <a 
+                href={chunk.url} 
+                download={chunk.fileName || `part-${index+1}.mp3`} // บังคับใช้ชื่อที่เราตั้ง
+                className="inline-flex items-center gap-1 text-[10px] bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition-colors cursor-pointer border border-gray-300"
+                title="บันทึกไฟล์นี้ลงเครื่อง"
+              >
+                <Download size={10} />
+                บันทึก MP3
+              </a>
           {chunk.status === 'done' && <CheckCircle size={16} className="text-green-500" />}
           {chunk.status === 'processing' && <Loader2 size={16} className="text-yellow-600 animate-spin" />}
           {chunk.status === 'error' && <AlertCircle size={16} className="text-red-500" />}
