@@ -209,73 +209,88 @@ export function useTranscriber() {
     });
   };
 
-  const processFile = async (inputFile: File) => {
+const processFile = async (inputFile: File) => {
     if (!ffmpegRef.current) {
-      ffmpegRef.current = new FFmpeg();
+        ffmpegRef.current = new FFmpeg();
     }
     clearOldChunks();
-    setFile(inputFile); // โชว์ชื่อไฟล์ต้นฉบับไปก่อน
+    setFile(inputFile);
     setSummary('');
     
-    // เปิด Popup
     setIsConverting(true);
     setConversionProgress(0);
 
     let audioFileToChunk = inputFile;
 
-    // 1. ถ้าเป็น Video ให้แปลงเป็น Audio ก่อน
-    if (inputFile.type.startsWith('video/')) {
-      setConversionStep('converting');
-      try {
-        await loadFFmpeg();
-        const ffmpeg = ffmpegRef.current;
+    try {
+      await loadFFmpeg();
+      const ffmpeg = ffmpegRef.current;
+      
+      ffmpeg.on('progress', ({ progress }) => {
+        setConversionProgress(progress * 100);
+      });
 
-        // Event จับ Progress การแปลง
-        ffmpeg.on('progress', ({ progress }) => {
-          setConversionProgress(progress * 100);
-        });
-
-        // เขียนไฟล์ลง Virtual File System
+      // 📌 กรณีที่ 1: เป็นไฟล์ Video -> ต้องแปลงเป็น MP3 (Re-encode)
+      if (inputFile.type.startsWith('video/')) {
+        setConversionStep('converting');
         await ffmpeg.writeFile('input.mp4', await fetchFile(inputFile));
-
-        // สั่งแปลง (แยกเสียงออกมาเป็น mp3)
-        // -vn = ไม่เอาภาพ, -acodec libmp3lame = แปลงเป็น mp3, -q:a 4 = คุณภาพกลางๆ (ไฟล์เล็ก)
+        
+        // สั่งแปลงและล้าง Header
         await ffmpeg.exec([
           '-i', 'input.mp4',
-          '-vn',                  // ไม่เอาภาพ
-          '-acodec', 'libmp3lame',// ใช้ตัวแปลง MP3
-          '-q:a', '4',            // คุณภาพกลางๆ
-          '-write_xing', '0',     // 👈 [สำคัญ] ห้ามเขียนสารบัญความยาว (VBR Header)
-          '-id3v2_version', '0',  // 👈 ห้ามใส่ ID3 Tag
+          '-vn',
+          '-acodec', 'libmp3lame',
+          '-q:a', '4',
+          '-write_xing', '0',    // 👈 ฆ่า Header หลอก
+          '-id3v2_version', '0', // 👈 ฆ่า Tag
           'output.mp3'
         ]);
 
-        // อ่านไฟล์ผลลัพธ์
         const data = await ffmpeg.readFile('output.mp3');
-        
-        // สร้าง File Object ใหม่จากข้อมูลที่แปลงแล้ว
-        const mp3Blob = new Blob([data as any], { type: 'audio/mp3' });
-        audioFileToChunk = new File([mp3Blob], `${inputFile.name.split('.')[0]}.mp3`, { type: 'audio/mp3' });
-        
-        // ล้างไฟล์ใน Memory ของ FFmpeg ทิ้ง (ประหยัด RAM)
-        await ffmpeg.deleteFile('input.mp4');
-        await ffmpeg.deleteFile('output.mp3');
+        audioFileToChunk = new File([data as any], "cleaned.mp3", { type: 'audio/mp3' });
+      } 
+      
+      // 📌 กรณีที่ 2: เป็นไฟล์ Audio (MP3/WAV) จากที่อื่น -> จับ "ล้างน้ำ" (Stream Copy)
+      // เพื่อแก้ปัญหา Header หลอกเวลา (2 ชั่วโมง) โดยไม่ต้องแปลงไฟล์ใหม่
+      else if (inputFile.type.startsWith('audio/')) {
+         setConversionStep('converting'); // ขึ้นสถานะว่ากำลังล้างไฟล์
+         
+         const ext = inputFile.name.split('.').pop() || 'mp3';
+         const inputName = `input.${ext}`;
+         
+         await ffmpeg.writeFile(inputName, await fetchFile(inputFile));
 
-      } catch (error) {
-        console.error("Conversion Error:", error);
-        alert("ไม่สามารถแปลงไฟล์วิดีโอได้ กรุณาลองใหม่");
-        setIsConverting(false);
-        return;
+         // 💡 คำสั่งเทพ: -c copy (ก๊อปปี้ไส้ในเดิม ไม่เสียคุณภาพ เร็วปรื๋อ)
+         // แต่สั่ง -map_metadata -1 เพื่อทิ้งป้ายชื่อเก่าให้หมด
+         await ffmpeg.exec([
+            '-i', inputName,
+            '-c', 'copy',           // Copy ไส้ใน (เร็วมาก)
+            '-map_metadata', '-1',  // ล้าง Metadata ทิ้ง
+            '-write_xing', '0',     // ห้ามเขียนความยาวหลอก
+            '-id3v2_version', '0',
+            'output.mp3'
+         ]);
+
+         const data = await ffmpeg.readFile('output.mp3');
+         audioFileToChunk = new File([data as any], `cleaned_${inputFile.name}`, { type: 'audio/mp3' });
       }
+
+      // เสร็จแล้วลบไฟล์ขยะทิ้ง
+      await ffmpeg.deleteFile('output.mp3').catch(() => {});
+      try { await ffmpeg.deleteFile('input.mp4'); } catch {}
+      
+    } catch (error) {
+      console.error("FFmpeg Error:", error);
+      // ถ้า Error (เช่น Browser ไม่รองรับ) ก็ใช้ไฟล์เดิมไปเสี่ยงดวงเอา
+      audioFileToChunk = inputFile;
     }
+
+    // 2. เริ่มตัดแบ่งไฟล์ (Chunking)
     setConversionStep('chunking');
-    setConversionProgress(0); // รีเซ็ตหลอด
+    setConversionProgress(0);
     
-    // เรียกใช้ฟังก์ชันตัดไฟล์ (ต้องปรับแก้ createChunks ให้รองรับ async หรือ callback progress เล็กน้อยถ้าอยากได้หลอดแม่นๆ)
-    // แต่ในที่นี้เราจะเรียกแบบ Synchronous เร็วๆ
     await createChunks(audioFileToChunk, chunkSizeMB);
     
-    // เสร็จสิ้น ปิด Popup
     setConversionProgress(100);
     setTimeout(() => {
       setIsConverting(false);
